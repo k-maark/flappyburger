@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Flappy Burger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Baloo+2:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --crust-900:#241a12;
+    --mustard-400:#ffd93b;
+    --mustard-500:#ffc93c;
+    --ketchup-500:#e8503a;
+    --cream-100:#fff8e7;
+    --ink-800:#2b2420;
+    --panel-bg:#ffffff;
+
+    --page-bg:#f2f2f2;
+    --page-fg:#222222;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --page-bg:#111111;
+      --page-fg:#eeeeee;
+    }
+  }
+  :root[data-theme="dark"]{
+    --page-bg:#111111;
+    --page-fg:#eeeeee;
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0; min-height:100%;
+    background: var(--page-bg);
+    color: var(--page-fg);
+    font-family:'Baloo 2','Trebuchet MS',sans-serif;
+    display:flex; align-items:center; justify-content:center;
+    min-height:100vh;
+    overflow:hidden;
+  }
+
+  #stage{
+    position:relative;
+    width:min(420px,100vw);
+    aspect-ratio:400/640;
+    overflow:hidden;
+    touch-action:none;
+    cursor:pointer;
+    -webkit-user-select:none; user-select:none;
+  }
+  #gameCanvas{ display:block; width:100%; height:100%; }
+
+  #hud{ position:absolute; top:14px; left:0; right:0; display:flex; justify-content:center; pointer-events:none; z-index:5; }
+  #scoreDisplay{
+    font-family:'Press Start 2P','Courier New',monospace;
+    font-size:30px; color: var(--mustard-400);
+    -webkit-text-stroke: 2px var(--crust-900);
+    text-shadow: 3px 3px 0 var(--crust-900);
+  }
+
+  .overlay{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center;
+    padding:24px; background:rgba(20,14,10,.42); z-index:10;
+  }
+  .overlay.hidden{ display:none; }
+
+  .pixel-title{
+    font-family:'Press Start 2P','Courier New',monospace;
+    font-size: clamp(20px, 7vw, 30px);
+    color: var(--ketchup-500);
+    -webkit-text-stroke: 2px var(--crust-900);
+    text-shadow: 4px 4px 0 var(--crust-900);
+    margin:0 0 18px;
+  }
+  #startScreen p{ color: var(--cream-100); font-size:15px; margin:4px 0; }
+  #startScreen .tap-hint{
+    margin-top:22px; font-family:'Press Start 2P','Courier New',monospace;
+    font-size:11px; color: var(--mustard-400); animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:.35;} }
+
+  .panel{
+    background: var(--panel-bg); color: var(--ink-800);
+    border-radius:16px; padding:18px 22px 20px; width:100%; max-width:300px;
+    box-shadow:0 10px 0 rgba(0,0,0,.25);
+  }
+  .panel p{ margin:6px 0; font-size:15px; font-weight:600; }
+  .panel .score-line{ font-size:16px; }
+  .panel .reward-line{ color:#b4390f; font-weight:800; }
+  #downloadBtn{
+    margin-top:12px; width:100%; display:flex; align-items:center; justify-content:center; gap:8px;
+    background: var(--mustard-500); color: var(--crust-900); border:none; border-radius:10px;
+    padding:11px 14px; font-family:'Baloo 2',sans-serif; font-weight:800; font-size:14px;
+    cursor:pointer; box-shadow:0 4px 0 #b98a12;
+  }
+  #downloadBtn:active{ transform:translateY(3px); box-shadow:0 1px 0 #b98a12; }
+  #downloadBtn:disabled{ opacity:.6; cursor:default; }
+  #downloadBtn svg{ width:16px; height:16px; flex-shrink:0; }
+  .tiny{ font-size:11px !important; color:#8a8178; font-weight:500 !important; margin-top:8px !important; }
+  #voucherStatus{ font-size:12px; min-height:16px; margin-top:6px; font-weight:700; }
+  #retryBtn{
+    margin-top:16px; background:none; border:2px solid var(--ink-800); color: var(--ink-800);
+    border-radius:10px; padding:9px 16px; font-family:'Baloo 2',sans-serif; font-weight:700;
+    font-size:13px; cursor:pointer;
+  }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="gameCanvas" width="400" height="640" aria-label="Flappy Burger játék"></canvas>
+    <div id="hud"><div id="scoreDisplay">0</div></div>
+
+    <div id="startScreen" class="overlay">
+      <p style="font-weight:800;font-size:17px;">Egy hamburger. Néhány szárny.<br>Egy egész város, amit ki kell kerülni.</p>
+      <p>Koppints, kattints, vagy nyomd meg a szóközt a repüléshez.</p>
+      <p>+1 pont minden elhagyott épületért.</p>
+      <p>Érj el 15 pontot, és kedvezményt kapsz — minél magasabb a pontszám, annál nagyobb!</p>
+      <div class="tap-hint">KOPPINTS A KEZDÉSHEZ</div>
+    </div>
+
+    <div id="gameOverScreen" class="overlay hidden">
+      <h2 class="pixel-title">JÁTÉK VÉGE</h2>
+      <div class="panel">
+        <p class="score-line">UTOLSÓ PONTSZÁM: <span id="finalScore">0</span></p>
+        <p id="rewardLine" class="reward-line">A JUTALMAD: 5% KEDVEZMÉNYKÓD!</p>
+        <button id="downloadBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+          KEDVEZMÉNYKUPON LETÖLTÉSE
+        </button>
+        <p class="tiny" id="voucherHint">A kupon egy letölthető kép.</p>
+        <p id="voucherStatus"></p>
+        <button id="retryBtn" type="button">Repülj újra</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const CW = 400, CH = 640;
+  const DPR = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = CW * DPR;
+  canvas.height = CH * DPR;
+  ctx.scale(DPR, DPR);
+
+  const stage = document.getElementById('stage');
+  const scoreDisplay = document.getElementById('scoreDisplay');
+  const startScreen = document.getElementById('startScreen');
+  const gameOverScreen = document.getElementById('gameOverScreen');
+  const finalScoreEl = document.getElementById('finalScore');
+  const rewardLineEl = document.getElementById('rewardLine');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const voucherHint = document.getElementById('voucherHint');
+  const voucherStatus = document.getElementById('voucherStatus');
+  const retryBtn = document.getElementById('retryBtn');
+
+  const REWARD_THRESHOLD = 15;
+  const TIER_STEP = 5;
+  const TIER_GAIN = 5;
+  const MAX_DISCOUNT = 25;
+  const GROUND_H = 40;
+  const FLOOR_Y = CH - GROUND_H;
+  const BIRD_X = 108;
+  const GRAVITY = 1500;
+  const FLAP_V = -390;
+  const MAX_FALL = 620;
+  const PIPE_W = 70;
+  const PIPE_SPACING = 232;
+
+  let state = 'start'; // start | playing | over
+  let bird, pipes, particles, bgOffset, cloudOffset, signBuildings;
+  let score = 0;
+  let lastTime = 0;
+  let currentCode = '';
+  let currentDiscount = 0;
+  let downloadsCap = null;
+
+  function rand(a,b){ return a + Math.random()*(b-a); }
+  function clamp(v,a,b){ return Math.max(a, Math.min(b,v)); }
+  function hash(n){ const x = Math.sin(n*12.9898)*43758.5453; return x - Math.floor(x); }
+
+  function getDiscountForScore(s){
+    if(s < REWARD_THRESHOLD) return 0;
+    const tier = Math.floor((s - REWARD_THRESHOLD) / TIER_STEP);
+    return Math.min(TIER_GAIN + tier*TIER_GAIN, MAX_DISCOUNT);
+  }
+
+  const clouds = [
+    {x:40,y:80,s:1.0}, {x:220,y:140,s:.7}, {x:320,y:70,s:.85},
+    {x:120,y:220,s:.6}, {x:20,y:300,s:.9}
+  ];
+
+  const skylineTile = [
+    {w:46,h:120},{w:30,h:80},{w:60,h:160},{w:38,h:100},{w:52,h:140},{w:34,h:90}
+  ];
+  const skylineTileWidth = skylineTile.reduce((s,b)=>s+b.w+18,0);
+
+  function resetWorld(){
+    bird = { y: CH/2, vy:0, rot:0, wing:0, flapPulse:0 };
+    pipes = [];
+    particles = [];
+    bgOffset = 0;
+    cloudOffset = 0;
+    score = 0;
+    scoreDisplay.textContent = '0';
+    signBuildings = [
+      { x: CW + 90,  w:118, h:300, color:'#F2C14E', dark:'#D9A62F', lines:['MINDEN','ÉPÜLETÉRT','+1 PONT'] },
+      { x: CW + 640, w:128, h:320, color:'#E2725B', dark:'#C15A46', lines:['TÖBB PONT =','TÖBB','KEDVEZMÉNY'] }
+    ];
+    let px = CW + 160;
+    for(let i=0;i<3;i++){
+      pipes.push(makePipe(px));
+      px += PIPE_SPACING;
+    }
+  }
+
+  function makePipe(x){
+    const gap = rand(158, 178);
+    const margin = 70;
+    const gapY = rand(margin + gap/2, FLOOR_Y - margin - gap/2);
+    const topIsYellow = Math.random() < 0.5;
+    return {
+      x, w: PIPE_W, gapY, gap,
+      topColor: topIsYellow ? 'yellow' : 'red',
+      bottomColor: topIsYellow ? 'red' : 'yellow',
+      passed:false,
+      seed: Math.random()*1000
+    };
+  }
+
+  function flap(){
+    bird.vy = FLAP_V;
+    bird.flapPulse = 1;
+    spawnTrail(6);
+  }
+
+  function spawnTrail(n){
+    for(let i=0;i<n;i++){
+      const behind = BIRD_X - 22 - rand(0,10);
+      const isSpark = Math.random() < 0.55;
+      particles.push({
+        x: behind, y: bird.y + rand(-10,10),
+        vx: rand(-70,-20), vy: rand(-40,40),
+        life:0, maxLife: rand(.35,.7),
+        size: isSpark ? rand(2,4) : rand(3,6),
+        type: isSpark ? 'spark' : 'flame',
+        color: isSpark ? (Math.random()<0.5?'#FFF8E7':'#FFD93B') : (Math.random()<0.5?'#FF7A3C':'#FFB347')
+      });
+    }
+  }
+
+  function currentSpeed(){
+    return 152 + Math.min(score * 2.4, 70);
+  }
+
+  function update(dt){
+    if(state !== 'playing') return;
+
+    bird.vy = clamp(bird.vy + GRAVITY*dt, -Infinity, MAX_FALL);
+    bird.y += bird.vy*dt;
+    if(bird.y < 22){ bird.y = 22; bird.vy = 0; }
+    bird.rot = clamp(bird.vy/500, -0.6, 1.1);
+    bird.wing += dt*(bird.flapPulse>0? 26:10);
+    bird.flapPulse = Math.max(0, bird.flapPulse - dt*3);
+
+    if(Math.random() < dt*10) spawnTrail(1);
+
+    const speed = currentSpeed();
+
+    for(const p of pipes){ p.x -= speed*dt; }
+    if(pipes[0] && pipes[0].x + PIPE_W < -10){
+      pipes.shift();
+      const lastX = pipes[pipes.length-1].x;
+      pipes.push(makePipe(lastX + PIPE_SPACING));
+    }
+    for(const p of pipes){
+      if(!p.passed && p.x + PIPE_W < BIRD_X){
+        p.passed = true;
+        score++;
+        scoreDisplay.textContent = String(score);
+        spawnTrail(10);
+      }
+    }
+
+    for(const s of signBuildings){ s.x -= speed*dt; }
+    signBuildings = signBuildings.filter(s => s.x + s.w > -20);
+
+    bgOffset -= speed*0.32*dt;
+    cloudOffset -= speed*0.5*dt;
+
+    particles.forEach(pt=>{
+      pt.life += dt;
+      pt.x += pt.vx*dt;
+      pt.y += pt.vy*dt;
+      pt.vy += 60*dt;
+    });
+    particles = particles.filter(pt => pt.life < pt.maxLife);
+
+    checkCollisions();
+  }
+
+  function checkCollisions(){
+    const bw = 40, bh = 30;
+    const bx0 = BIRD_X - bw/2, bx1 = BIRD_X + bw/2;
+    const by0 = bird.y - bh/2, by1 = bird.y + bh/2;
+
+    if(by1 >= FLOOR_Y){ endGame(); return; }
+
+    for(const p of pipes){
+      if(bx1 > p.x && bx0 < p.x + p.w){
+        const gapTop = p.gapY - p.gap/2;
+        const gapBottom = p.gapY + p.gap/2;
+        if(by0 < gapTop || by1 > gapBottom){
+          endGame();
+          return;
+        }
+      }
+    }
+  }
+
+  function endGame(){
+    state = 'over';
+    finalScoreEl.textContent = String(score);
+    const discount = getDiscountForScore(score);
+    currentDiscount = discount;
+    if(discount > 0){
+      rewardLineEl.textContent = 'A JUTALMAD: ' + discount + '% KEDVEZMÉNYKÓD!';
+      currentCode = generateCode();
+      if(downloadsCap){
+        downloadBtn.style.display = 'flex';
+        voucherHint.style.display = 'block';
+        voucherStatus.textContent = '';
+      } else {
+        downloadBtn.style.display = 'none';
+        voucherHint.style.display = 'none';
+        voucherStatus.style.color = '#b4390f';
+        voucherStatus.textContent = 'A kódod: ' + currentCode;
+      }
+    } else {
+      rewardLineEl.textContent = 'ÉRJ EL 15 PONTOT AZ 5% KEDVEZMÉNYÉRT!';
+      downloadBtn.style.display = 'none';
+      voucherHint.style.display = 'none';
+      voucherStatus.textContent = '';
+    }
+    gameOverScreen.classList.remove('hidden');
+  }
+
+  function generateCode(){
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let s = '';
+    for(let i=0;i<5;i++) s += chars[Math.floor(Math.random()*chars.length)];
+    return 'BUN-' + s;
+  }
+
+  // ---------- drawing ----------
+
+  function draw(){
+    ctx.clearRect(0,0,CW,CH);
+
+    const sky = ctx.createLinearGradient(0,0,0,CH);
+    sky.addColorStop(0,'#5FCBF0');
+    sky.addColorStop(1,'#BFEFFB');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0,0,CW,CH);
+
+    drawClouds();
+    drawSkyline();
+    drawSignBuildings();
+    drawPipes();
+    drawParticles();
+    drawGround();
+    drawBird();
+  }
+
+  function drawClouds(){
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,.9)';
+    clouds.forEach(c=>{
+      let x = ((c.x + cloudOffset) % (CW+160) + (CW+160)) % (CW+160) - 80;
+      cloudPuff(x, c.y, c.s);
+    });
+    ctx.restore();
+  }
+  function cloudPuff(x,y,s){
+    ctx.beginPath();
+    ctx.ellipse(x, y, 26*s, 14*s, 0, 0, Math.PI*2);
+    ctx.ellipse(x+20*s, y-6*s, 18*s, 12*s, 0, 0, Math.PI*2);
+    ctx.ellipse(x-20*s, y-4*s, 16*s, 11*s, 0, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  function drawSkyline(){
+    ctx.save();
+    ctx.fillStyle = 'rgba(120,160,190,.55)';
+    let startX = (bgOffset % skylineTileWidth);
+    for(let t=-1; t<3; t++){
+      let x = startX + t*skylineTileWidth;
+      for(const b of skylineTile){
+        ctx.fillRect(x, FLOOR_Y - b.h, b.w, b.h);
+        x += b.w + 18;
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawSignBuildings(){
+    signBuildings.forEach(s=>{
+      const y = FLOOR_Y - s.h;
+      ctx.fillStyle = s.color;
+      ctx.fillRect(s.x, y, s.w, s.h);
+      ctx.fillStyle = s.dark;
+      ctx.fillRect(s.x, y, 8, s.h);
+      ctx.font = "8px 'Press Start 2P', monospace";
+      ctx.textAlign = 'center';
+      let ly = y + 60;
+      s.lines.forEach(line=>{
+        ctx.fillStyle = 'rgba(0,0,0,.28)';
+        ctx.fillText(line, s.x + s.w/2 + 1, ly + 1);
+        ctx.fillStyle = '#FFF9E8';
+        ctx.fillText(line, s.x + s.w/2, ly);
+        ly += 16;
+      });
+      ctx.textAlign = 'left';
+    });
+  }
+
+  function drawPipes(){
+    pipes.forEach(p=>{
+      const gapTop = p.gapY - p.gap/2;
+      const gapBottom = p.gapY + p.gap/2;
+      drawBuilding(p.x, 0, p.w, gapTop, p.topColor, p.seed, true);
+      drawBuilding(p.x, gapBottom, p.w, FLOOR_Y - gapBottom, p.bottomColor, p.seed+7, false);
+    });
+  }
+
+  function drawBuilding(x,y,w,h,colorName,seed,isTop){
+    if(h<=0) return;
+    const palette = colorName==='yellow'
+      ? { base:'#FFC93C', dark:'#E0A31E', light:'#FFE08A', win:'#FFF6D8', winDark:'#D9A62F' }
+      : { base:'#E8503A', dark:'#C23B27', light:'#F58B78', win:'#FFD9CF', winDark:'#B0402E' };
+
+    ctx.fillStyle = palette.base;
+    ctx.fillRect(x,y,w,h);
+    ctx.fillStyle = palette.light;
+    ctx.fillRect(x,y,6,h);
+    ctx.fillStyle = palette.dark;
+    ctx.fillRect(x+w-6,y,6,h);
+
+    const capY = isTop ? y+h-10 : y+2;
+    ctx.fillStyle = palette.dark;
+    ctx.fillRect(x-2, capY, w+4, 8);
+
+    const cols = Math.max(2, Math.floor(w/16));
+    const rowH = 20;
+    const rows = Math.max(1, Math.floor((h-20)/rowH));
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        const wx = x + 8 + c*((w-16)/(cols-1||1));
+        const wy = y + 16 + r*rowH;
+        if(wy > y+h-16) continue;
+        const lit = hash(seed + r*13.1 + c*7.7) > 0.4;
+        ctx.fillStyle = lit ? palette.win : palette.winDark;
+        ctx.fillRect(wx-3, wy-4, 6,8);
+      }
+    }
+  }
+
+  function drawGround(){
+    ctx.fillStyle = '#4A4A52';
+    ctx.fillRect(0, FLOOR_Y, CW, GROUND_H);
+    ctx.fillStyle = '#5C5C66';
+    ctx.fillRect(0, FLOOR_Y, CW, 6);
+    ctx.fillStyle = '#F4D35E';
+    let dx = (bgOffset*2.2) % 34;
+    for(let x=dx-34; x<CW; x+=34){
+      ctx.fillRect(x, FLOOR_Y+18, 18, 4);
+    }
+  }
+
+  function drawParticles(){
+    particles.forEach(pt=>{
+      const t = pt.life/pt.maxLife;
+      ctx.globalAlpha = clamp(1-t, 0, 1);
+      ctx.fillStyle = pt.color;
+      if(pt.type==='spark'){
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, pt.size*(1-t*.4), 0, Math.PI*2);
+        ctx.fill();
+      } else {
+        ctx.fillRect(pt.x-pt.size/2, pt.y-pt.size/2, pt.size, pt.size);
+      }
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  function drawBird(){
+    ctx.save();
+    ctx.translate(BIRD_X, bird.y);
+    ctx.rotate(bird.rot*0.5);
+    drawHamburger(ctx, 0, 0, 1, bird.wing);
+    ctx.restore();
+  }
+
+  function drawHamburger(hctx, cx, cy, scale, wingPhase){
+    hctx.save();
+    hctx.translate(cx,cy);
+    hctx.scale(scale,scale);
+
+    const flap = wingPhase!==undefined ? Math.sin(wingPhase)*14 : 0;
+    hctx.fillStyle = '#FFF8E7';
+    hctx.strokeStyle = '#E8A33D';
+    hctx.lineWidth = 1.5;
+    [-1,1].forEach(side=>{
+      hctx.save();
+      hctx.translate(side*17, -2);
+      hctx.rotate(side * (0.5 + flap*0.02));
+      hctx.beginPath();
+      hctx.ellipse(0,0, 13, 7, 0, 0, Math.PI*2);
+      hctx.fill();
+      hctx.stroke();
+      hctx.restore();
+    });
+
+    hctx.fillStyle = '#D98A3D';
+    roundRect(hctx,-19,10,38,7,3); hctx.fill();
+
+    hctx.fillStyle = '#7B4A2E';
+    roundRect(hctx,-19,3,38,7,2); hctx.fill();
+
+    hctx.fillStyle = '#8BC34A';
+    hctx.beginPath();
+    hctx.moveTo(-20,3);
+    for(let i=0;i<=6;i++){
+      const px = -20 + i*(40/6);
+      hctx.lineTo(px, i%2===0 ? -1 : 3);
+    }
+    hctx.lineTo(20,3);
+    hctx.closePath();
+    hctx.fill();
+
+    hctx.fillStyle = '#E8503A';
+    roundRect(hctx,-19,-4,38,5,2); hctx.fill();
+
+    hctx.fillStyle = '#E8A33D';
+    hctx.beginPath();
+    hctx.moveTo(-19,-8);
+    hctx.quadraticCurveTo(0,-24,19,-8);
+    hctx.lineTo(19,-2);
+    hctx.quadraticCurveTo(0,-14,-19,-2);
+    hctx.closePath();
+    hctx.fill();
+
+    hctx.fillStyle = '#FFF3D0';
+    [[-9,-14],[0,-17],[9,-14],[-4,-11],[5,-10]].forEach(([sx,sy])=>{
+      hctx.beginPath();
+      hctx.ellipse(sx,sy,1.6,2.4,0.3,0,Math.PI*2);
+      hctx.fill();
+    });
+
+    hctx.fillStyle = '#2B2420';
+    hctx.beginPath(); hctx.arc(-6,-15,1.6,0,Math.PI*2); hctx.fill();
+    hctx.beginPath(); hctx.arc(6,-15,1.6,0,Math.PI*2); hctx.fill();
+    hctx.strokeStyle = '#2B2420';
+    hctx.lineWidth = 1.4;
+    hctx.beginPath();
+    hctx.arc(0,-11,4,0.15*Math.PI,0.85*Math.PI);
+    hctx.stroke();
+
+    hctx.restore();
+  }
+
+  function roundRect(rctx,x,y,w,h,r){
+    rctx.beginPath();
+    rctx.moveTo(x+r,y);
+    rctx.arcTo(x+w,y,x+w,y+h,r);
+    rctx.arcTo(x+w,y+h,x,y+h,r);
+    rctx.arcTo(x,y+h,x,y,r);
+    rctx.arcTo(x,y,x+w,y,r);
+    rctx.closePath();
+  }
+
+  // ---------- loop ----------
+  function loop(t){
+    if(!lastTime) lastTime = t;
+    let dt = (t - lastTime)/1000;
+    dt = Math.min(dt, 0.033);
+    lastTime = t;
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- input ----------
+  function onPress(){
+    if(state === 'start'){
+      state = 'playing';
+      startScreen.classList.add('hidden');
+      flap();
+    } else if(state === 'playing'){
+      flap();
+    }
+  }
+  stage.addEventListener('pointerdown', ()=>{
+    if(state === 'over') return;
+    onPress();
+  });
+  window.addEventListener('keydown', (e)=>{
+    if(e.code === 'Space' || e.code === 'ArrowUp'){
+      e.preventDefault();
+      if(state !== 'over') onPress();
+    }
+  });
+
+  retryBtn.addEventListener('click', ()=>{
+    gameOverScreen.classList.add('hidden');
+    resetWorld();
+    state = 'playing';
+  });
+
+  // ---------- voucher ----------
+  function roundRectP(pctx,x,y,w,h,r){
+    pctx.beginPath();
+    pctx.moveTo(x+r,y);
+    pctx.arcTo(x+w,y,x+w,y+h,r);
+    pctx.arcTo(x+w,y+h,x,y+h,r);
+    pctx.arcTo(x,y+h,x,y,r);
+    pctx.arcTo(x,y,x+w,y,r);
+    pctx.closePath();
+  }
+
+  async function generateVoucherBlob(code, finalScore, discount){
+    await document.fonts.ready;
+    const vw = 900, vh = 540;
+    const c = document.createElement('canvas');
+    c.width = vw; c.height = vh;
+    const vctx = c.getContext('2d');
+
+    const bg = vctx.createLinearGradient(0,0,vw,vh);
+    bg.addColorStop(0,'#FFE9A8');
+    bg.addColorStop(1,'#FFD05C');
+    vctx.fillStyle = bg;
+    vctx.fillRect(0,0,vw,vh);
+
+    vctx.strokeStyle = '#B4390F';
+    vctx.lineWidth = 6;
+    vctx.setLineDash([16,12]);
+    vctx.strokeRect(24,24,vw-48,vh-48);
+    vctx.setLineDash([]);
+
+    drawHamburger(vctx, 130, 210, 3.2, undefined);
+
+    vctx.fillStyle = '#B4390F';
+    vctx.font = "700 26px 'Baloo 2', sans-serif";
+    vctx.textAlign = 'left';
+    vctx.fillText('FLAPPY BURGER', 250, 110);
+
+    vctx.fillStyle = '#2B2420';
+    vctx.font = "800 60px 'Baloo 2', sans-serif";
+    vctx.fillText(discount + '% KEDVEZMÉNY', 250, 205);
+
+    vctx.font = "600 22px 'Baloo 2', sans-serif";
+    vctx.fillText('a következő rendelésedre — repülés közben szerezve', 250, 236);
+
+    vctx.fillStyle = '#FFFFFF';
+    roundRectP(vctx, 250, 270, 480, 90, 14);
+    vctx.fill();
+    vctx.fillStyle = '#2B2420';
+    vctx.font = "700 20px 'Baloo 2', sans-serif";
+    vctx.fillText('KUPONKÓD', 272, 300);
+    vctx.font = "800 30px 'Press Start 2P', monospace";
+    vctx.fillStyle = '#B4390F';
+    vctx.fillText(code, 272, 342);
+
+    vctx.fillStyle = '#5A4A2E';
+    vctx.font = "500 17px 'Baloo 2', sans-serif";
+    vctx.fillText('Végső pontszám: ' + finalScore + '   \u2022   Mutasd fel ezt a kódot a pénztárnál', 250, 400);
+
+    return new Promise(resolve=>{
+      c.toBlob(blob=>resolve(blob), 'image/png');
+    });
+  }
+
+  downloadBtn.addEventListener('click', async ()=>{
+    if(!downloadsCap) return;
+    downloadBtn.disabled = true;
+    voucherStatus.style.color = '#8a8178';
+    voucherStatus.textContent = 'A kuponod előkészítése\u2026';
+    try{
+      const blob = await generateVoucherBlob(currentCode, score, currentDiscount);
+      const res = await downloadsCap.save({
+        filename: 'flappy-burger-' + currentDiscount + 'off-' + currentCode + '.png',
+        data: blob
+      });
+      voucherStatus.style.color = '#3f7d3a';
+      voucherStatus.textContent = res.status === 'delivered' ? 'Kupon elküldve!' : 'Kupon mentve!';
+    } catch(err){
+      voucherStatus.style.color = '#B4390F';
+      if(err && err.code === 'declined'){
+        voucherStatus.textContent = 'Semmi baj \u2014 a kódod: ' + currentCode;
+      } else {
+        voucherStatus.textContent = 'Nem sikerült elmenteni. A kódod: ' + currentCode;
+      }
+    } finally {
+      downloadBtn.disabled = false;
+    }
+  });
+
+  // ---------- init ----------
+  async function init(){
+    try{
+      if(window.claude && typeof window.claude.use === 'function'){
+        downloadsCap = await window.claude.use('downloads');
+      }
+    } catch(e){
+      downloadsCap = null;
+    }
+    resetWorld();
+    requestAnimationFrame(loop);
+  }
+  init();
+
+})();
+</script>
+</body>
+</html>
